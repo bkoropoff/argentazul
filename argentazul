@@ -1,0 +1,214 @@
+#!/bin/sh -eu
+APPNAME=${0##*/}
+[ -z "${REGISTRY:-}" ] && REGISTRY=quay.io/fedora-ostree-desktops
+if [ -e /usr/lib/os-release ]
+then
+    eval "`/bin/grep -E '^VARIANT_ID=|^VERSION_ID=' /usr/lib/os-release`"
+    [ -z "${DISTRO:-}" ] && DISTRO="$VARIANT_ID"
+    [ -z "${RELEASE:-}" ] && RELEASE="$VERSION_ID"
+    unset VARIANT_ID VERSION_ID
+fi
+STATEDIR="${XDG_STATE_HOME:-$HOME/.local/state}/$APPNAME"
+UPDATESTAMP="${STATEDIR}/update-stamp"
+[ -z "${OUTDIR:-}" ] && OUTDIR=/var/cache/$APPNAME
+[ -z "${FORCE:-}" ] && FORCE=false
+[ -z "${CONTAINERFILE:-}" ] && CONTAINERFILE=
+[ -z "${CONFIGDIR:-}" ] && CONFIGDIR=
+
+# Find configuation files in XDG paths
+find_config()
+{
+    _IFS="$IFS"
+    IFS=:
+    set -- ${XDG_CONFIG_HOME:-$HOME/.config} ${XDG_CONFIG_DIRS}
+    IFS="$_IFS"
+    for dir
+    do
+        [ -z "$dir" ] && continue
+        [ -z "$CONFIGDIR" -a -d "$dir/$APPNAME" ] && CONFIGDIR="$dir/$APPNAME"
+
+        if [ -f "$dir/$APPNAME/config" ]
+        then
+            . "$dir/$APPNAME/config"
+        fi
+        if [ -z "$CONTAINERFILE" -a -f "$dir/$APPNAME/Containerfile" ]
+        then
+            CONTAINERFILE="$dir/$APPNAME/Containerfile"
+        fi
+    done
+}
+
+usage()
+{
+    echo "Usage:"
+    echo "  $APPNAME [-f|--force] [-c|--config FILE] [--distro DISTRO] [purge|update]"
+    echo ""
+    echo "Description:"
+    echo "  Update and customize Fedora atomic distributions"
+}
+
+help()
+{
+    usage
+    echo ""
+    echo "Commands:"
+    echo "  update                  Build and deploy any updates (default)"
+    echo "  purge                   Clean intermediate containers and images"
+    echo ""
+    echo "Options:"
+    echo "  -f, --force             Build and deploy image even without update"
+    echo "  -c FILE, --config FILE  Read an additional configuration file"
+    echo "  --distro DISTRO         Override distribution"
+    echo "  --release RELEASE       Override release"
+    echo ""
+    echo "Environment and configuration file variables:"
+    echo "  REGISTRY                Registry to use ($REGISTRY)"
+    echo "  DISTRO                  Distribution variant to use ($DISTRO)"
+    echo "  RELEASE                 Distribution release to use ($RELEASE)"
+    echo "  FORCE                   Build and deploy image even without update ($FORCE)"
+    echo "  CONFIGDIR               Main configuration directory ($CONFIGDIR)"
+    echo "  CONTAINERFILE           Partial Containerfile to use ($CONTAINERFILE)"
+    echo "  OUTDIR                  Image output and work directory ($OUTDIR)"
+}
+
+# Get ID of local copy of base image
+# result: the ID
+current_image()
+{
+    result=`buildah inspect -t image --format '{{.FromImageID}}' "$FROM" 2>/dev/null` || result="none"
+}
+
+# Update base image from registry
+# return:
+#   true: update available
+#   false: no update available
+update()
+{
+    current_image
+    prev="$result"
+    updated=`buildah pull --policy=ifnewer $FROM`
+    [ "$prev" != "$updated" ]
+}
+
+# Clean up stale containers and images
+purge()
+{
+    echo "Purging containers and images"
+    for entry in `buildah containers --format '{{.ContainerID}},{{.ImageID}}'`
+    do
+        cid=${entry%,*}
+        iid=${entry#*,}
+        if [ "$(buildah inspect --format "{{.OCIv1.Config.Labels.${APPNAME}_distro}}" "$cid")" = "$DISTRO" ]
+        then
+            buildah rm "$cid"
+            buildah rmi -f "$iid"
+        fi
+    done
+    # Remove any images left dangling by the above
+    set -- `buildah images -a -f dangling=true --format '{{.ID}}'`
+    [ "$#" -gt 0 ] && buildah rmi -f "$@"
+    true
+}
+
+find_config
+
+COMMAND=update
+
+while [ $# -gt 0 ]
+do
+    case "$1" in
+        -c|--config)
+            . "$(realpath "$2")"
+            shift 2
+            ;;
+        -f|--force)
+            FORCE=true
+            shift
+            ;;
+        --distro)
+            DISTRO="$2"
+            shift 2
+            ;;
+        --release)
+            RELEASE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            help
+            exit 0
+            ;;
+        purge)
+            COMMAND=purge
+            shift
+            ;;
+        update)
+            COMMAND=update
+            shift
+            ;;
+        --*|-*|*)
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+FROM=$REGISTRY/$DISTRO:$RELEASE
+TIMESTAMP=`date -u +%F-%H%M%S`
+OUTPUT=${OUTDIR}/${DISTRO}-${RELEASE}-${TIMESTAMP}.tar
+
+if [ $COMMAND = purge ]
+then
+    purge
+    exit 0
+fi
+
+# Check for update
+if update
+then
+    # Create stamp indicating rebuild is needed
+    mkdir -p "$STATEDIR"
+    touch "$UPDATESTAMP"
+    # Purge old containers/images invalidated by update
+    purge
+fi
+
+if [ ! -e "$UPDATESTAMP" -a "$FORCE" != "true" ]
+then
+    echo "No updates available"
+    exit 0
+fi
+
+# Create output directory with sudo if necessary
+if [ ! -d "$OUTDIR" ]
+then
+    echo "Need to create $OUTDIR"
+    sudo sh -c "mkdir -m 0775 '$OUTDIR'; chgrp wheel '$OUTDIR'"
+fi
+
+trap 'rm -f "$OUTPUT" "$OUTDIR"/Containerfile.*' EXIT
+
+cat > "$OUTDIR/Containerfile.pre" <<EOF
+FROM $REGISTRY/$DISTRO:$RELEASE
+LABEL ${APPNAME}_distro=$DISTRO ${APPNAME}_release=$RELEASE ${APPNAME}_timestamp=$TIMESTAMP
+ARG DISTRO=$DISTRO RELEASE=$RELEASE TIMESTAMP=$TIMESTAMP
+EOF
+cat > "$OUTDIR/Containerfile.post" << EOF
+RUN ostree container commit
+EOF
+
+# Build the image
+buildah build \
+        -t oci-archive:$OUTPUT \
+        --layers \
+        --pull=never \
+        --net=slirp4netns \
+        -f "$OUTDIR/Containerfile.pre" \
+        -f "$CONTAINERFILE" \
+        -f "$OUTDIR/Containerfile.post" \
+        "$CONFIGDIR"
+
+# Install the image
+rpm-ostree rebase ostree-unverified-image:oci-archive:"$OUTPUT"
+
+# Clear stamp indicating rebuild needed
+rm -f "$UPDATESTAMP"
