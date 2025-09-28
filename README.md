@@ -67,6 +67,10 @@ The script searches for configuration files in XDG paths (e.g.
     * `DISTRO`: The distribution variant (`silverblue`, `kinoite`, ...)
     * `RELEASE`: The distribution version (e.g. `42`)
 
+When running with `--toolbox`, files are looked for in a subdirectory with
+the specified name, e.g. `~/.config/argentazul/default/Containerfile` for
+`--toolbox default`.
+
 ## Example
 To update a system (detecting distribution and release):
 ```bash
