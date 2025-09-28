@@ -60,7 +60,7 @@ The script searches for configuration files in XDG paths (e.g.
 `$XDG_CONFIG_HOME/argentazul`, usually `~/.config/argentazul`). It looks for:
 - `config`: A shell script to set variables.
 - `Containerfile`: A partial Containerfile for customizing the image. `FROM`
-  and `REGISTRY` directives as well as the final `RUN rpm-ostree container
+  and `REGISTRY` directives as well as the final `RUN ostree container
   commit` are automatically added.  The following arguments are available:
     * `DISTRO`: The distribution variant (`silverblue`, `kinoite`, ...)
     * `RELEASE`: The distribution version (e.g. `42`)
