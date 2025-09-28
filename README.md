@@ -8,10 +8,9 @@ customization with standard `Containerfile` commands.
 
 ## Features
 
-- Check for and deploy latest updates
-- Customize image with `Containerfile` commands
-- Builds and deploys images using `buildah` and `rpm-ostree`.
-- Maintains state to track updates and avoid unnecessary rebuilds.
+- Operates on either your host system or `toolbox` containers.
+- Checks for and deploys latest updates easily.
+- Aggressively reclaims disk space from stale containers/images
 
 ## Requirements
 
@@ -20,7 +19,7 @@ customization with standard `Containerfile` commands.
 ## Usage
 
 ```bash
-./argentazul [-f|--force] [-c|--config FILE] [--distro DISTRO] [--release RELEASE] [purge|update]
+./argentazul [-f|--force] [-c|--config FILE] [--distro DISTRO] [--release RELEASE] [--toolbox TOOLBOX] [purge|update]
 ```
 
 ### Commands
@@ -36,6 +35,9 @@ customization with standard `Containerfile` commands.
 - `-c FILE, --config FILE`: Specifies an additional configuration file.
 - `--distro DISTRO`: Overrides the distribution variant (e.g., `silverblue`).
 - `--release RELEASE`: Overrides the release version (e.g., `42`).
+- `--toolbox TOOLBOX`: Build and deploy the toolbox container of the given name"
+  instead of the host system. An argument of `default` specifies the default toolbox
+  container.
 - `-h, --help`: Displays help and exits.
 
 ## Environment and Configuration Variables

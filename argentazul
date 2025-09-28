@@ -1,16 +1,6 @@
 #!/bin/sh -eu
 APPNAME=${0##*/}
-[ -z "${REGISTRY:-}" ] && REGISTRY=quay.io/fedora-ostree-desktops
-if [ -e /usr/lib/os-release ]
-then
-    eval "`/bin/grep -E '^VARIANT_ID=|^VERSION_ID=' /usr/lib/os-release`"
-    [ -z "${DISTRO:-}" ] && DISTRO="$VARIANT_ID"
-    [ -z "${RELEASE:-}" ] && RELEASE="$VERSION_ID"
-    unset VARIANT_ID VERSION_ID
-fi
 STATEDIR="${XDG_STATE_HOME:-$HOME/.local/state}/$APPNAME"
-UPDATESTAMP="${STATEDIR}/update-stamp"
-[ -z "${OUTDIR:-}" ] && OUTDIR=/var/cache/$APPNAME
 [ -z "${FORCE:-}" ] && FORCE=false
 [ -z "${CONTAINERFILE:-}" ] && CONTAINERFILE=
 [ -z "${CONFIGDIR:-}" ] && CONFIGDIR=
@@ -18,6 +8,8 @@ UPDATESTAMP="${STATEDIR}/update-stamp"
 # Find configuation files in XDG paths
 find_config()
 {
+    sub=""
+    [ -n "$TOOLBOX" ] && sub="/$TOOLBOX"
     _IFS="$IFS"
     IFS=:
     set -- ${XDG_CONFIG_HOME:-$HOME/.config} ${XDG_CONFIG_DIRS}
@@ -25,15 +17,15 @@ find_config()
     for dir
     do
         [ -z "$dir" ] && continue
-        [ -z "$CONFIGDIR" -a -d "$dir/$APPNAME" ] && CONFIGDIR="$dir/$APPNAME"
+        [ -z "$CONFIGDIR" -a -d "$dir/$APPNAME$sub" ] && CONFIGDIR="$dir/$APPNAME$sub"
 
-        if [ -f "$dir/$APPNAME/config" ]
+        if [ -f "$dir/$APPNAME$sub/config" ]
         then
-            . "$dir/$APPNAME/config"
+            . "$dir/$APPNAME$sub/config"
         fi
-        if [ -z "$CONTAINERFILE" -a -f "$dir/$APPNAME/Containerfile" ]
+        if [ -z "$CONTAINERFILE" -a -f "$dir/$APPNAME$sub/Containerfile" ]
         then
-            CONTAINERFILE="$dir/$APPNAME/Containerfile"
+            CONTAINERFILE="$dir/$APPNAME$sub/Containerfile"
         fi
     done
 }
@@ -41,7 +33,7 @@ find_config()
 usage()
 {
     echo "Usage:"
-    echo "  $APPNAME [-f|--force] [-c|--config FILE] [--distro DISTRO] [purge|update]"
+    echo "  $APPNAME [-f|--force] [-c|--config FILE] [--distro DISTRO] [--toolbox TOOLBOX] [purge|update]"
     echo ""
     echo "Description:"
     echo "  Update and customize Fedora atomic distributions"
@@ -60,15 +52,19 @@ help()
     echo "  -c FILE, --config FILE  Read an additional configuration file"
     echo "  --distro DISTRO         Override distribution"
     echo "  --release RELEASE       Override release"
+    echo "  --toolbox TOOLBOX       Build and deploy the toolbox container of the given name"
+    echo "                          instead of the host system. An argument of \`default\`"
+    echo "                          specifies the default toolbox container."
     echo ""
     echo "Environment and configuration file variables:"
-    echo "  REGISTRY                Registry to use ($REGISTRY)"
-    echo "  DISTRO                  Distribution variant to use ($DISTRO)"
-    echo "  RELEASE                 Distribution release to use ($RELEASE)"
+    echo "  TOOLBOX                 Toolbox container to operate on (${TOOLBOX:-unset})"
+    echo "  REGISTRY                Registry to use (${REGISTRY:-unset})"
+    echo "  DISTRO                  Distribution variant to use (${DISTRO:-unset})"
+    echo "  RELEASE                 Distribution release to use (${RELEASE:-unset})"
     echo "  FORCE                   Build and deploy image even without update ($FORCE)"
     echo "  CONFIGDIR               Main configuration directory ($CONFIGDIR)"
-    echo "  CONTAINERFILE           Partial Containerfile to use ($CONTAINERFILE)"
-    echo "  OUTDIR                  Image output and work directory ($OUTDIR)"
+    echo "  CONTAINERFILE           Partial Containerfile to use (${CONTAINERFILE:-unset})"
+    echo "  OUTDIR                  Image output and work directory (${OUTDIR:-unset})"
 }
 
 # Get ID of local copy of base image
@@ -105,13 +101,12 @@ purge()
         fi
     done
     # Remove any images left dangling by the above
-    set -- `buildah images -a -f dangling=true --format '{{.ID}}'`
+    set -- `buildah images -a -f dangling=true --format '{{.ID}}' 2>/dev/null`
     [ "$#" -gt 0 ] && buildah rmi -f "$@"
     true
 }
 
-find_config
-
+TOOLBOX="${TOOLBOX:-}"
 COMMAND=update
 
 while [ $# -gt 0 ]
@@ -133,9 +128,13 @@ do
             RELEASE="$2"
             shift 2
             ;;
+        --toolbox)
+            TOOLBOX="$2"
+            shift 2
+            ;;
         -h|--help)
-            help
-            exit 0
+            COMMAND=help
+            shift
             ;;
         purge)
             COMMAND=purge
@@ -152,9 +151,65 @@ do
     esac
 done
 
+if [ -z "${REGISTRY:-}" ]
+then
+    case "$TOOLBOX" in
+        "") REGISTRY=quay.io/fedora-ostree-desktops ;;
+        *) REGISTRY=registry.fedoraproject.org ;;
+    esac
+fi
+
+if [ -e /usr/lib/os-release ]
+then
+    eval "`/bin/grep -E '^ID=|^VARIANT_ID=|^VERSION_ID=' /usr/lib/os-release`"
+    if [ -z "${DISTRO:-}" ]
+    then
+        if [ -z "$TOOLBOX" ]
+        then
+            DISTRO="$VARIANT_ID"
+        else
+            DISTRO="fedora-toolbox"
+        fi
+    fi
+
+    [ -z "${RELEASE:-}" ] && RELEASE="$VERSION_ID"
+    unset ID VARIANT_ID VERSION_ID
+fi
+
+[ "$TOOLBOX" = "default" ] && TOOLBOX="$DISTRO-$RELEASE"
+
+find_config
+
+UPDATESTAMP="${STATEDIR}/update-stamp"
+[ -n "$TOOLBOX" ] && UPDATESTAMP="$UPDATESTAMP-$TOOLBOX"
+
+if [ -z "${OUTDIR:-}" ]
+then
+    if [ -n "$TOOLBOX" ]
+    then
+        OUTDIR="${XDG_CACHE_HOME:-$HOME/.cache}/$APPNAME/$TOOLBOX"
+    else
+        OUTDIR=/var/cache/$APPNAME
+    fi
+fi
+
 FROM=$REGISTRY/$DISTRO:$RELEASE
 TIMESTAMP=`date -u +%F-%H%M%S`
-OUTPUT=${OUTDIR}/${DISTRO}-${RELEASE}-${TIMESTAMP}.tar
+
+if [ -n "$TOOLBOX" ]
+then
+    OUTPUT=""
+    TAG=$APPNAME-toolbox-$TOOLBOX
+else
+    OUTPUT=${OUTDIR}/${DISTRO}-${RELEASE}-${TIMESTAMP}.tar
+    TAG=oci-archive:"$OUTPUT"
+fi
+
+if [ $COMMAND = help ]
+then
+    help
+    exit 0
+fi
 
 if [ $COMMAND = purge ]
 then
@@ -179,36 +234,46 @@ then
 fi
 
 # Create output directory with sudo if necessary
-if [ ! -d "$OUTDIR" ]
+if [ ! -d "$OUTDIR" ] && ! mkdir -p "$OUTDIR" >/dev/null 2>&1
 then
     echo "Need to create $OUTDIR"
     sudo sh -c "mkdir -m 0775 '$OUTDIR'; chgrp wheel '$OUTDIR'"
 fi
 
-trap 'rm -f "$OUTPUT" "$OUTDIR"/Containerfile.*' EXIT
+trap 'rm -f "$OUTPUT" "$OUTDIR"/Containerfile' EXIT
 
-cat > "$OUTDIR/Containerfile.pre" <<EOF
+{
+    cat <<EOF
 FROM $REGISTRY/$DISTRO:$RELEASE
 LABEL ${APPNAME}_distro=$DISTRO ${APPNAME}_release=$RELEASE
 ARG DISTRO=$DISTRO RELEASE=$RELEASE
 EOF
-cat > "$OUTDIR/Containerfile.post" << EOF
+    cat "$CONTAINERFILE"
+    if [ -z "$TOOLBOX" ]
+    then
+        cat << EOF
 RUN ostree container commit
 EOF
+    fi
+} > "$OUTDIR/Containerfile"
 
 # Build the image
 buildah build \
-        -t oci-archive:$OUTPUT \
+        -t "$TAG" \
         --layers \
         --pull=never \
         --net=slirp4netns \
-        -f "$OUTDIR/Containerfile.pre" \
-        -f "$CONTAINERFILE" \
-        -f "$OUTDIR/Containerfile.post" \
+        -f "$OUTDIR/Containerfile" \
         "$CONFIGDIR"
 
 # Install the image
-rpm-ostree rebase ostree-unverified-image:oci-archive:"$OUTPUT"
+if [ -n "$TOOLBOX" ]
+then
+    podman rm -if "$TOOLBOX" >/dev/null 2>&1
+    toolbox create --image "$TAG" "$TOOLBOX"
+else
+    rpm-ostree rebase ostree-unverified-image:"$TAG"
+fi
 
 # Clear stamp indicating rebuild needed
 rm -f "$UPDATESTAMP"
