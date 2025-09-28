@@ -64,7 +64,6 @@ The script searches for configuration files in XDG paths (e.g.
   commit` are automatically added.  The following arguments are available:
     * `DISTRO`: The distribution variant (`silverblue`, `kinoite`, ...)
     * `RELEASE`: The distribution version (e.g. `42`)
-    * `TIMESTAMP`: A UTC timestamp when the build started
 
 ## Example
 To update a system (detecting distribution and release):

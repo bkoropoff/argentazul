@@ -189,8 +189,8 @@ trap 'rm -f "$OUTPUT" "$OUTDIR"/Containerfile.*' EXIT
 
 cat > "$OUTDIR/Containerfile.pre" <<EOF
 FROM $REGISTRY/$DISTRO:$RELEASE
-LABEL ${APPNAME}_distro=$DISTRO ${APPNAME}_release=$RELEASE ${APPNAME}_timestamp=$TIMESTAMP
-ARG DISTRO=$DISTRO RELEASE=$RELEASE TIMESTAMP=$TIMESTAMP
+LABEL ${APPNAME}_distro=$DISTRO ${APPNAME}_release=$RELEASE
+ARG DISTRO=$DISTRO RELEASE=$RELEASE
 EOF
 cat > "$OUTDIR/Containerfile.post" << EOF
 RUN ostree container commit
