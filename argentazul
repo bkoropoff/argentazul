@@ -247,8 +247,15 @@ trap 'rm -f "$OUTPUT" "$OUTDIR"/Containerfile' EXIT
     cat <<EOF
 FROM $REGISTRY/$DISTRO:$RELEASE
 LABEL ${APPNAME}_distro=$DISTRO ${APPNAME}_release=$RELEASE
-ARG DISTRO=$DISTRO RELEASE=$RELEASE
+ARG DISTRO=$DISTRO RELEASE=$RELEASE HOSTNAME=${HOSTNAME:-`hostname`}
 EOF
+    if [ -n "$TOOLBOX" ]
+    then
+        cat <<EOF
+ARG TOOLBOX=$TOOLBOX
+EOF
+    fi
+
     cat "$CONTAINERFILE"
     if [ -z "$TOOLBOX" ]
     then

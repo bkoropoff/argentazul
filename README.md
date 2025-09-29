@@ -66,6 +66,8 @@ The script searches for configuration files in XDG paths (e.g.
   commit` are automatically added.  The following arguments are available:
     * `DISTRO`: The distribution variant (`silverblue`, `kinoite`, ...)
     * `RELEASE`: The distribution version (e.g. `42`)
+    * `HOSTNAME`: The host system's hostname
+    * `TOOLBOX`: The name of the toolbox container being built (if applicable)
 
 When running with `--toolbox`, files are looked for in a subdirectory with
 the specified name, e.g. `~/.config/argentazul/default/Containerfile` for
