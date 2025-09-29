@@ -1,5 +1,6 @@
 #!/bin/sh -eu
 APPNAME=${0##*/}
+CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}/$APPNAME"
 STATEDIR="${XDG_STATE_HOME:-$HOME/.local/state}/$APPNAME"
 [ -z "${FORCE:-}" ] && FORCE=false
 [ -z "${CONTAINERFILE:-}" ] && CONTAINERFILE=
@@ -187,7 +188,7 @@ if [ -z "${OUTDIR:-}" ]
 then
     if [ -n "$TOOLBOX" ]
     then
-        OUTDIR="${XDG_CACHE_HOME:-$HOME/.cache}/$APPNAME/$TOOLBOX"
+        OUTDIR="$CACHEDIR/$TOOLBOX"
     else
         OUTDIR=/var/cache/$APPNAME
     fi
@@ -258,7 +259,7 @@ EOF
 } > "$OUTDIR/Containerfile"
 
 # Build the image
-buildah build \
+env TMPDIR="$CACHEDIR" buildah build \
         -t "$TAG" \
         --layers \
         --pull=never \
