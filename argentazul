@@ -65,7 +65,6 @@ help()
     echo "  FORCE                   Build and deploy image even without update ($FORCE)"
     echo "  CONFIGDIR               Main configuration directory ($CONFIGDIR)"
     echo "  CONTAINERFILE           Partial Containerfile to use (${CONTAINERFILE:-unset})"
-    echo "  OUTDIR                  Image output and work directory (${OUTDIR:-unset})"
 }
 
 # Get ID of local copy of base image
@@ -184,14 +183,11 @@ find_config
 UPDATESTAMP="${STATEDIR}/update-stamp"
 [ -n "$TOOLBOX" ] && UPDATESTAMP="$UPDATESTAMP-$TOOLBOX"
 
-if [ -z "${OUTDIR:-}" ]
+if [ -n "$TOOLBOX" ]
 then
-    if [ -n "$TOOLBOX" ]
-    then
-        OUTDIR="$CACHEDIR/$TOOLBOX"
-    else
-        OUTDIR=/var/cache/$APPNAME
-    fi
+    WORKDIR="$CACHEDIR/work-$TOOLBOX"
+else
+    WORKDIR=/var/cache/$APPNAME
 fi
 
 FROM=$REGISTRY/$DISTRO:$RELEASE
@@ -202,7 +198,7 @@ then
     OUTPUT=""
     TAG=$APPNAME-toolbox-$TOOLBOX
 else
-    OUTPUT=${OUTDIR}/${DISTRO}-${RELEASE}-${TIMESTAMP}.tar
+    OUTPUT=${WORKDIR}/${DISTRO}-${RELEASE}-${TIMESTAMP}.tar
     TAG=oci-archive:"$OUTPUT"
 fi
 
@@ -234,20 +230,20 @@ then
     exit 0
 fi
 
-# Create output directory with sudo if necessary
-if [ ! -d "$OUTDIR" ] && ! mkdir -p "$OUTDIR" >/dev/null 2>&1
+# Create work directory with sudo if necessary
+if [ ! -d "$WORKDIR" ] && ! mkdir -p "$WORKDIR" >/dev/null 2>&1
 then
-    echo "Need to create $OUTDIR"
-    sudo sh -c "mkdir -m 0775 '$OUTDIR'; chgrp wheel '$OUTDIR'"
+    echo "Need to create $WORKDIR"
+    sudo sh -c "mkdir -m 0775 '$WORKDIR'; chgrp wheel '$WORKDIR'"
 fi
 
-trap 'rm -f "$OUTPUT" "$OUTDIR"/Containerfile' EXIT
+trap 'rm -f "$OUTPUT" "$WORKDIR"/Containerfile' EXIT
 
 {
     cat <<EOF
-FROM $REGISTRY/$DISTRO:$RELEASE
+FROM $FROM
 LABEL ${APPNAME}_distro=$DISTRO ${APPNAME}_release=$RELEASE
-ARG DISTRO=$DISTRO RELEASE=$RELEASE HOSTNAME=${HOSTNAME:-`hostname`}
+ARG REGISTRY=$REGISTRY DISTRO=$DISTRO RELEASE=$RELEASE FROM=$FROM HOSTNAME=${HOSTNAME:-`hostname`}
 EOF
     if [ -n "$TOOLBOX" ]
     then
@@ -257,21 +253,18 @@ EOF
     fi
 
     cat "$CONTAINERFILE"
-    if [ -z "$TOOLBOX" ]
-    then
-        cat << EOF
-RUN ostree container commit
-EOF
-    fi
-} > "$OUTDIR/Containerfile"
+} > "$WORKDIR/Containerfile"
+
+TMPDIR="$CACHEDIR/tmp-$DISTRO-$RELEASE"
+mkdir -p "$TMPDIR"
 
 # Build the image
-env TMPDIR="$CACHEDIR" buildah build \
+env TMPDIR="$TMPDIR" buildah build \
         -t "$TAG" \
         --layers \
         --pull=never \
         --net=slirp4netns \
-        -f "$OUTDIR/Containerfile" \
+        -f "$WORKDIR/Containerfile" \
         "$CONFIGDIR"
 
 # Install the image

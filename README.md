@@ -53,19 +53,19 @@ environment or in configuration files:
 - `CONFIGDIR`: Directory for configuration files (auto-detected via XDG paths).
 - `CONTAINERFILE`: Path to a custom Containerfile (auto-detected via XDG
   paths).
-- `OUTDIR`: Output and working directory for images (default:
-  `/var/cache/argentazul`).
 
 ## Configuration Files
 
 The script searches for configuration files in XDG paths (e.g.
 `$XDG_CONFIG_HOME/argentazul`, usually `~/.config/argentazul`). It looks for:
 - `config`: A shell script to set variables.
-- `Containerfile`: A partial Containerfile for customizing the image. `FROM`
-  and `REGISTRY` directives as well as the final `RUN ostree container
-  commit` are automatically added.  The following arguments are available:
+- `Containerfile`: A partial `Containerfile` for customizing the image.
+  An appropriate `FROM` directive and the following `ARG` directives are
+  automatically prepended:
+    * `REGISTRY`: The registry being used (e.g. `quay.io/fedora-ostree-desktops`)
     * `DISTRO`: The distribution variant (`silverblue`, `kinoite`, ...)
     * `RELEASE`: The distribution version (e.g. `42`)
+    * `FROM`: The source container (e.g. `quay.io/fedora-ostree-desktops/silverblue:42`)
     * `HOSTNAME`: The host system's hostname
     * `TOOLBOX`: The name of the toolbox container being built (if applicable)
 
