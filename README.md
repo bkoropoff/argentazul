@@ -89,12 +89,5 @@ To purge stale containers and images:
 ./argentazul purge
 ```
 
-## Notes
-
-- The script requires write access to `$OUTDIR` (default:
-  `/var/cache/argentazul`), as `rpm-ostree` can't read images from your home
-  directory. If the directory doesn't exist, it attempts to create it with
-  `sudo` and set it writable by the `wheel` group.
-
 ## License
 [MIT](License)

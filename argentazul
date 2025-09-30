@@ -183,12 +183,7 @@ find_config
 UPDATESTAMP="${STATEDIR}/update-stamp"
 [ -n "$TOOLBOX" ] && UPDATESTAMP="$UPDATESTAMP-$TOOLBOX"
 
-if [ -n "$TOOLBOX" ]
-then
-    WORKDIR="$CACHEDIR/work-$TOOLBOX"
-else
-    WORKDIR=/var/cache/$APPNAME
-fi
+WORKDIR="$CACHEDIR/work${TOOLBOX:+-$TOOLBOX}"
 
 FROM=$REGISTRY/$DISTRO:$RELEASE
 TIMESTAMP=`date -u +%F-%H%M%S`
@@ -230,14 +225,9 @@ then
     exit 0
 fi
 
-# Create work directory with sudo if necessary
-if [ ! -d "$WORKDIR" ] && ! mkdir -p "$WORKDIR" >/dev/null 2>&1
-then
-    echo "Need to create $WORKDIR"
-    sudo sh -c "mkdir -m 0775 '$WORKDIR'; chgrp wheel '$WORKDIR'"
-fi
 
 trap 'rm -f "$OUTPUT" "$WORKDIR"/Containerfile' EXIT
+mkdir -p "$WORKDIR"
 
 {
     cat <<EOF
@@ -273,7 +263,7 @@ then
     podman rm -if "$TOOLBOX" >/dev/null 2>&1
     toolbox create --image "$TAG" "$TOOLBOX"
 else
-    rpm-ostree rebase ostree-unverified-image:"$TAG"
+    sudo bootc switch --transport oci-archive "$OUTPUT"
 fi
 
 # Clear stamp indicating rebuild needed
