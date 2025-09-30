@@ -60,12 +60,11 @@ The script searches for configuration files in XDG paths (e.g.
 `$XDG_CONFIG_HOME/argentazul`, usually `~/.config/argentazul`). It looks for:
 - `config`: A shell script to set variables.
 - `Containerfile`: A partial `Containerfile` for customizing the image.
-  An appropriate `FROM` directive and the following `ARG` directives are
-  automatically prepended:
+  The following build arguments are available:
+    * `FROM`: The source container image (e.g. `quay.io/fedora-ostree-desktops/silverblue:42`)
     * `REGISTRY`: The registry being used (e.g. `quay.io/fedora-ostree-desktops`)
     * `DISTRO`: The distribution variant (`silverblue`, `kinoite`, ...)
     * `RELEASE`: The distribution version (e.g. `42`)
-    * `FROM`: The source container (e.g. `quay.io/fedora-ostree-desktops/silverblue:42`)
     * `HOSTNAME`: The host system's hostname
     * `TOOLBOX`: The name of the toolbox container being built (if applicable)
 
@@ -79,9 +78,9 @@ To update a system (detecting distribution and release):
 ./argentazul
 ```
 
-To force an update with a custom configuration:
+To force an update for the default toolbox container:
 ```bash
-./argentazul -f -c ./custom-config.sh
+./argentazul -f --toolbox default
 ```
 
 To purge stale containers and images:

@@ -90,14 +90,18 @@ update()
 purge()
 {
     echo "Purging containers and images"
-    for entry in `buildah containers --format '{{.ContainerID}},{{.ImageID}}'`
+    for entry in `buildah containers --format '{{.ContainerID}}'`
     do
-        cid=${entry%,*}
-        iid=${entry#*,}
-        if [ "$(buildah inspect --format "{{.OCIv1.Config.Labels.${APPNAME}_distro}}" "$cid")" = "$DISTRO" ]
+        if [ "$(buildah inspect --format "{{.OCIv1.Config.Labels.${APPNAME}_layer}}" "$entry")" = "${TOOLBOX:--}" ]
         then
-            buildah rm "$cid"
-            buildah rmi -f "$iid"
+            buildah rm "$entry"
+        fi
+    done
+    for entry in `buildah images -a --format '{{.ID}}'`
+    do
+        if [ "$(buildah inspect --format "{{.OCIv1.Config.Labels.${APPNAME}_layer}}" "$entry")" = "${TOOLBOX:--}" ]
+        then
+            buildah rmi -f "$entry"
         fi
     done
     # Remove any images left dangling by the above
@@ -226,36 +230,26 @@ then
 fi
 
 
-trap 'rm -f "$OUTPUT" "$WORKDIR"/Containerfile' EXIT
+trap 'rm -f "$OUTPUT"' EXIT
 mkdir -p "$WORKDIR"
-
-{
-    cat <<EOF
-FROM $FROM
-LABEL ${APPNAME}_distro=$DISTRO ${APPNAME}_release=$RELEASE
-ARG REGISTRY=$REGISTRY DISTRO=$DISTRO RELEASE=$RELEASE FROM=$FROM HOSTNAME=${HOSTNAME:-`hostname`}
-EOF
-    if [ -n "$TOOLBOX" ]
-    then
-        cat <<EOF
-ARG TOOLBOX=$TOOLBOX
-EOF
-    fi
-
-    cat "$CONTAINERFILE"
-} > "$WORKDIR/Containerfile"
 
 TMPDIR="$CACHEDIR/tmp-$DISTRO-$RELEASE"
 mkdir -p "$TMPDIR"
 
 # Build the image
 env TMPDIR="$TMPDIR" buildah build \
-        -t "$TAG" \
-        --layers \
-        --pull=never \
-        --net=slirp4netns \
-        -f "$WORKDIR/Containerfile" \
-        "$CONFIGDIR"
+    -t "$TAG" \
+    --layers \
+    --pull=never \
+    --net=slirp4netns \
+    --build-arg REGISTRY="$REGISTRY" \
+    --build-arg DISTRO="$DISTRO" \
+    --build-arg RELEASE="$RELEASE" \
+    --build-arg FROM="$FROM" \
+    --build-arg HOSTNAME="${HOSTNAME:-`hostname`}" \
+    --layer-label "${APPNAME}_layer=${TOOLBOX:--}" \
+    -f "$CONTAINERFILE" \
+    "$CONFIGDIR"
 
 # Install the image
 if [ -n "$TOOLBOX" ]
