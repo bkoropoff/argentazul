@@ -2,18 +2,17 @@
 APPNAME=${0##*/}
 CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}/$APPNAME"
 STATEDIR="${XDG_STATE_HOME:-$HOME/.local/state}/$APPNAME"
-[ -z "${FORCE:-}" ] && FORCE=false
-[ -z "${CONTAINERFILE:-}" ] && CONTAINERFILE=
-[ -z "${CONFIGDIR:-}" ] && CONFIGDIR=
+[ -z "${FORCE-}" ] && FORCE=false
+[ -z "${CONTAINERFILE-}" ] && CONTAINERFILE=
+[ -z "${CONFIGDIR-}" ] && CONFIGDIR=
 
 # Find configuation files in XDG paths
 find_config()
 {
-    sub=""
-    [ -n "$TOOLBOX" ] && sub="/$TOOLBOX"
+    sub="${TOOLBOX+/$TOOLBOX}"
     _IFS="$IFS"
     IFS=:
-    set -- ${XDG_CONFIG_HOME:-$HOME/.config} ${XDG_CONFIG_DIRS}
+    set -- ${XDG_CONFIG_HOME:-$HOME/.config} ${XDG_CONFIG_DIRS-}
     IFS="$_IFS"
     for dir
     do
@@ -29,6 +28,7 @@ find_config()
             CONTAINERFILE="$dir/$APPNAME$sub/Containerfile"
         fi
     done
+    unset dir sub
 }
 
 usage()
@@ -83,7 +83,10 @@ update()
     current_image
     prev="$result"
     updated=`buildah pull --policy=ifnewer $FROM`
-    [ "$prev" != "$updated" ]
+    result=false
+    [ "$prev" != "$updated" ] && result=true
+    unset prev updated
+    $result
 }
 
 # Clean up stale containers and images
@@ -107,10 +110,11 @@ purge()
     # Remove any images left dangling by the above
     set -- `buildah images -a -f dangling=true --format '{{.ID}}' 2>/dev/null`
     [ "$#" -gt 0 ] && buildah rmi -f "$@"
+    unset entry
     true
 }
 
-TOOLBOX="${TOOLBOX:-}"
+TOOLBOX="${TOOLBOX-}"
 COMMAND=update
 
 while [ $# -gt 0 ]
@@ -155,7 +159,7 @@ do
     esac
 done
 
-if [ -z "${REGISTRY:-}" ]
+if [ -z "${REGISTRY-}" ]
 then
     case "$TOOLBOX" in
         "") REGISTRY=quay.io/fedora-ostree-desktops ;;
@@ -166,7 +170,7 @@ fi
 if [ -e /usr/lib/os-release ]
 then
     eval "`/bin/grep -E '^ID=|^VARIANT_ID=|^VERSION_ID=' /usr/lib/os-release`"
-    if [ -z "${DISTRO:-}" ]
+    if [ -z "${DISTRO-}" ]
     then
         if [ -z "$TOOLBOX" ]
         then
@@ -176,13 +180,13 @@ then
         fi
     fi
 
-    [ -z "${RELEASE:-}" ] && RELEASE="$VERSION_ID"
+    [ -z "${RELEASE-}" ] && RELEASE="$VERSION_ID"
     unset ID VARIANT_ID VERSION_ID
 fi
 
-[ "$TOOLBOX" = "default" ] && TOOLBOX="$DISTRO-$RELEASE"
-
 find_config
+
+[ "$TOOLBOX" = "default" ] && TOOLBOX="$DISTRO-$RELEASE"
 
 UPDATESTAMP="${STATEDIR}/update-stamp"
 [ -n "$TOOLBOX" ] && UPDATESTAMP="$UPDATESTAMP-$TOOLBOX"
@@ -230,7 +234,7 @@ then
 fi
 
 
-trap 'rm -f "$OUTPUT"' EXIT
+trap 'rm -rf "$WORKDIR"' EXIT
 mkdir -p "$WORKDIR"
 
 TMPDIR="$CACHEDIR/tmp-$DISTRO-$RELEASE"
