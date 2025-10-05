@@ -3,9 +3,9 @@ APPNAME=${0##*/}
 CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}/$APPNAME"
 STATEDIR="${XDG_STATE_HOME:-$HOME/.local/state}/$APPNAME"
 POSTINSTALL="${POSTINSTALL-}"
-[ -z "${FORCE-}" ] && FORCE=false
-[ -z "${CONTAINERFILE-}" ] && CONTAINERFILE=
-[ -z "${CONFIGDIR-}" ] && CONFIGDIR=
+FORCE="${FORCE:-false}"
+CONTAINERFILE="${CONTAINERFILE-}"
+CONFIGDIR="${CONFIGDIR-}"
 
 # Find configuation files in XDG paths
 find_config()
@@ -13,18 +13,20 @@ find_config()
     sub="${TOOLBOX+/$TOOLBOX}"
     _IFS="$IFS"
     IFS=:
+    # shellcheck disable=SC2086
     set -- ${XDG_CONFIG_HOME:-$HOME/.config} ${XDG_CONFIG_DIRS-}
     IFS="$_IFS"
     for dir
     do
         [ -z "$dir" ] && continue
-        [ -z "$CONFIGDIR" -a -d "$dir/$APPNAME$sub" ] && CONFIGDIR="$dir/$APPNAME$sub"
+        [ -z "$CONFIGDIR" ] && [ -d "$dir/$APPNAME$sub" ] && CONFIGDIR="$dir/$APPNAME$sub"
 
         if [ -f "$dir/$APPNAME$sub/config" ]
         then
+            # shellcheck source=/dev/null
             . "$dir/$APPNAME$sub/config"
         fi
-        if [ -z "$CONTAINERFILE" -a -f "$dir/$APPNAME$sub/Containerfile" ]
+        if [ -z "$CONTAINERFILE" ] && [ -f "$dir/$APPNAME$sub/Containerfile" ]
         then
             CONTAINERFILE="$dir/$APPNAME$sub/Containerfile"
         fi
@@ -72,7 +74,7 @@ help()
 # result: the ID
 current_image()
 {
-    result=`buildah inspect -t image --format '{{.FromImageID}}' "$FROM" 2>/dev/null` || result="none"
+    result=$(buildah inspect -t image --format '{{.FromImageID}}' "$FROM" 2>/dev/null) || result="none"
 }
 
 # Update base image from registry
@@ -83,7 +85,7 @@ update()
 {
     current_image
     prev="$result"
-    updated=`buildah pull --policy=ifnewer $FROM`
+    updated=$(buildah pull --policy=ifnewer "$FROM")
     result=false
     [ "$prev" != "$updated" ] && result=true
     unset prev updated
@@ -94,14 +96,14 @@ update()
 purge()
 {
     echo "Purging containers and images"
-    for entry in `buildah containers --format '{{.ContainerID}}'`
+    for entry in $(buildah containers --format '{{.ContainerID}}')
     do
         if [ "$(buildah inspect --format "{{.OCIv1.Config.Labels.${APPNAME}_layer}}" "$entry")" = "${TOOLBOX:--}" ]
         then
             buildah rm "$entry"
         fi
     done
-    for entry in `buildah images -a --format '{{.ID}}'`
+    for entry in $(buildah images -a --format '{{.ID}}')
     do
         if [ "$(buildah inspect --format "{{.OCIv1.Config.Labels.${APPNAME}_layer}}" "$entry")" = "${TOOLBOX:--}" ]
         then
@@ -109,7 +111,8 @@ purge()
         fi
     done
     # Remove any images left dangling by the above
-    set -- `buildah images -a -f dangling=true --format '{{.ID}}' 2>/dev/null`
+    # shellcheck disable=SC2046
+    set -- $(buildah images -a -f dangling=true --format '{{.ID}}' 2>/dev/null)
     [ "$#" -gt 0 ] && buildah rmi -f "$@"
     unset entry
     true
@@ -122,6 +125,7 @@ while [ $# -gt 0 ]
 do
     case "$1" in
         -c|--config)
+            # shellcheck source=/dev/null
             . "$(realpath "$2")"
             shift 2
             ;;
@@ -170,7 +174,7 @@ fi
 
 if [ -e /usr/lib/os-release ]
 then
-    eval "`/bin/grep -E '^ID=|^VARIANT_ID=|^VERSION_ID=' /usr/lib/os-release`"
+    eval "$(/bin/grep -E '^ID=|^VARIANT_ID=|^VERSION_ID=' /usr/lib/os-release)"
     if [ -z "${DISTRO-}" ]
     then
         if [ -z "$TOOLBOX" ]
@@ -195,7 +199,7 @@ UPDATESTAMP="${STATEDIR}/update-stamp"
 WORKDIR="$CACHEDIR/work${TOOLBOX:+-$TOOLBOX}"
 
 FROM=$REGISTRY/$DISTRO:$RELEASE
-TIMESTAMP=`date -u +%F-%H%M%S`
+TIMESTAMP=$(date -u +%F-%H%M%S)
 
 if [ -n "$TOOLBOX" ]
 then
@@ -228,7 +232,7 @@ then
     purge
 fi
 
-if [ ! -e "$UPDATESTAMP" -a "$FORCE" != "true" ]
+if [ ! -e "$UPDATESTAMP" ] && [ "$FORCE" != "true" ]
 then
     echo "No updates available"
     exit 0
@@ -242,6 +246,7 @@ TMPDIR="$CACHEDIR/tmp-$DISTRO-$RELEASE"
 mkdir -p "$TMPDIR"
 
 # Build the image
+# shellcheck disable=SC3028
 env TMPDIR="$TMPDIR" buildah build \
     -t "$TAG" \
     --layers \
@@ -251,7 +256,7 @@ env TMPDIR="$TMPDIR" buildah build \
     --build-arg DISTRO="$DISTRO" \
     --build-arg RELEASE="$RELEASE" \
     --build-arg FROM="$FROM" \
-    --build-arg HOSTNAME="${HOSTNAME:-`hostname`}" \
+    --build-arg HOSTNAME="${HOSTNAME:-$(hostname)}" \
     --layer-label "${APPNAME}_layer=${TOOLBOX:--}" \
     -f "$CONTAINERFILE" \
     "$CONFIGDIR"
