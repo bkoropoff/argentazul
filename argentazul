@@ -2,6 +2,7 @@
 APPNAME=${0##*/}
 CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}/$APPNAME"
 STATEDIR="${XDG_STATE_HOME:-$HOME/.local/state}/$APPNAME"
+POSTINSTALL="${POSTINSTALL-}"
 [ -z "${FORCE-}" ] && FORCE=false
 [ -z "${CONTAINERFILE-}" ] && CONTAINERFILE=
 [ -z "${CONFIGDIR-}" ] && CONFIGDIR=
@@ -263,6 +264,8 @@ then
 else
     sudo bootc switch --transport oci-archive "$OUTPUT"
 fi
+
+[ -n "$POSTINSTALL" ] && $POSTINSTALL
 
 # Clear stamp indicating rebuild needed
 rm -f "$UPDATESTAMP"
